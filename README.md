@@ -184,6 +184,8 @@ https://你的worker.workers.dev/loc.json?token=你的TOKEN
 | `PORT` | 否 | `8080` | 监听端口；1024 以下需 root |
 | `CERT` | 否 | 空 | HTTPS 证书 fullchain 路径；与 `KEY` 同时设置才走 https |
 | `KEY` | 否 | 空 | HTTPS 私钥路径；与 `CERT` 同时设置才走 https |
+| `DATA_FILE` | 否 | `server.js` 同目录的 `loc.json` | 当前定位数据文件路径 |
+| `FAVORITES_FILE` | 否 | 与 `DATA_FILE` 同目录的 `favorites.json` | 收藏地址数据文件路径 |
 
 启动示例：
 
@@ -198,7 +200,7 @@ KEY=/root/cert/example.com/privkey.pem \
 node server.js
 ```
 
-数据文件 `loc.json` 自动落在 `server.js` 同目录，记录当前坐标 / 海拔 / 精度；已在 `.gitignore` 中忽略，不会被误提交进仓库。
+数据文件 `loc.json` 自动落在 `server.js` 同目录，记录当前坐标 / 海拔 / 精度；收藏地址保存在同目录的 `favorites.json`，清除浏览器数据后会自动从服务端恢复。两个文件均已在 `.gitignore` 中忽略，不会被误提交进仓库。
 
 > ⚠️ **不要把 `TOKEN` 写在命令行历史里**——推荐用 systemd 的 `Environment=` 或 `.env` + `direnv`。
 

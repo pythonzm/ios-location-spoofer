@@ -38,6 +38,9 @@ if (!TOKEN) {
 const CERT = process.env.CERT || "";                   // https 证书 fullchain 路径（留空=http）
 const KEY = process.env.KEY || "";                     // https 私钥路径
 const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, "loc.json");
+// 收藏保存在 VPS 文件中；浏览器 localStorage 只作为缓存和旧版本迁移来源。
+const FAVORITES_FILE = process.env.FAVORITES_FILE || path.join(path.dirname(DATA_FILE), "favorites.json");
+const FAVORITES_MAX = 12;
 
 // 常量时间比较，避免通过响应时延逐字节爆破 token
 function safeEqual(a, b) {
@@ -71,6 +74,42 @@ function writeLoc(obj) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(obj, null, 2));
 }
 
+function readFavorites() {
+  try {
+    const list = JSON.parse(fs.readFileSync(FAVORITES_FILE, "utf8"));
+    return Array.isArray(list) ? list : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function normalizeFavorites(value) {
+  if (!Array.isArray(value)) throw new Error("favorites must be an array");
+  return value.slice(0, FAVORITES_MAX).map(function (item) {
+    if (!item || typeof item !== "object") throw new Error("bad favorite");
+    const lat = Number(item.lat);
+    const lng = Number(item.lng);
+    if (!isFinite(lat) || !isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      throw new Error("bad favorite coords");
+    }
+    const out = {
+      name: String(item.name || "").trim().slice(0, 100),
+      lat: lat,
+      lng: lng
+    };
+    ["alt", "hacc", "vacc", "ts"].forEach(function (key) {
+      if (item[key] !== undefined && item[key] !== null && item[key] !== "" && isFinite(Number(item[key]))) {
+        out[key] = Number(item[key]);
+      }
+    });
+    return out;
+  });
+}
+
+function writeFavorites(list) {
+  fs.writeFileSync(FAVORITES_FILE, JSON.stringify(list, null, 2));
+}
+
 function send(res, code, type, body) {
   res.writeHead(code, {
     "Content-Type": type,
@@ -101,6 +140,31 @@ function handler(req, res) {
   if (url.pathname === "/loc.json" && req.method === "GET") {
     if (!checkToken(token, res)) return;
     return send(res, 200, "application/json", JSON.stringify(readLoc()));
+  }
+
+  // ---- 收藏地址（VPS 持久化，不依赖浏览器历史数据） ----
+  if (url.pathname === "/favorites" && req.method === "GET") {
+    if (!checkToken(token, res)) return;
+    return send(res, 200, "application/json", JSON.stringify(readFavorites()));
+  }
+
+  if (url.pathname === "/favorites" && req.method === "PUT") {
+    if (!checkToken(token, res)) return;
+    let body = "";
+    req.on("data", function (c) {
+      body += c;
+      if (body.length > 5e4) req.destroy();
+    });
+    req.on("end", function () {
+      try {
+        const list = normalizeFavorites(JSON.parse(body));
+        writeFavorites(list);
+        return send(res, 200, "application/json", JSON.stringify(list));
+      } catch (e) {
+        return send(res, 400, "application/json", '{"error":"bad favorites"}');
+      }
+    });
+    return;
   }
 
   // ---- 网页保存（前端已转好 WGS-84 再发过来；海拔/精度可选） ----
@@ -336,7 +400,9 @@ function geolocationErrorMessage(err){
 
 var FAV_KEY="lp_favs_v1";
 var FAV_MAX=12;
+var serverFavs=[];
 function loadFavs(){
+  if(serverFavs.length)return serverFavs.slice();
   try{
     var raw=localStorage.getItem(FAV_KEY);
     var a=raw?JSON.parse(raw):[];
@@ -344,7 +410,27 @@ function loadFavs(){
   }catch(e){return [];}
 }
 function saveFavs(list){
-  try{localStorage.setItem(FAV_KEY,JSON.stringify(list.slice(0,FAV_MAX)));}catch(e){}
+  serverFavs=list.slice(0,FAV_MAX);
+  try{localStorage.setItem(FAV_KEY,JSON.stringify(serverFavs));}catch(e){}
+  fetch("/favorites?token="+encodeURIComponent(token),{
+    method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(serverFavs)
+  }).then(function(r){if(!r.ok)throw new Error(String(r.status));})
+    .catch(function(){toast("收藏同步到 VPS 失败");});
+}
+function syncFavs(){
+  fetch("/favorites?token="+encodeURIComponent(token))
+    .then(function(r){if(!r.ok)throw new Error(String(r.status));return r.json();})
+    .then(function(list){
+      if(!Array.isArray(list))list=[];
+      if(!list.length){
+        var local=loadFavs();
+        if(local.length){saveFavs(local);return;}
+      }
+      serverFavs=list.slice(0,FAV_MAX);
+      try{localStorage.setItem(FAV_KEY,JSON.stringify(serverFavs));}catch(e){}
+      if($("favs").classList.contains("show"))renderFavs();
+    })
+    .catch(function(){toast("收藏从 VPS 加载失败，暂用本地缓存");});
 }
 function applyFavorite(it){
   var lat=Number(it.lat), lng=wrapLng(it.lng);
@@ -594,6 +680,7 @@ $("savebtn").addEventListener("click",commit);
 $("restorebtn").addEventListener("click",toggleEnabled);
 $("favadd").addEventListener("click",addFavorite);
 $("favlistbtn").addEventListener("click",toggleFavs);
+syncFavs();
 load();
 </script>
 </body>

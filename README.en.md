@@ -132,6 +132,8 @@ This project welcomes review and feedback from the LINUX DO community: [LINUX DO
 | `PORT` | No | `8080` | Listen port; ports below 1024 require root. |
 | `CERT` | No | empty | HTTPS fullchain certificate path; HTTPS is used only when both `CERT` and `KEY` are set. |
 | `KEY` | No | empty | HTTPS private key path; used only when both `CERT` and `KEY` are set. |
+| `DATA_FILE` | No | `loc.json` next to `server.js` | Current-location data file path. |
+| `FAVORITES_FILE` | No | `favorites.json` next to `DATA_FILE` | Favorite-locations data file path. |
 
 Startup examples:
 
@@ -146,7 +148,7 @@ KEY=/root/cert/example.com/privkey.pem \
 node server.js
 ```
 
-The data file `loc.json` is written next to `server.js` and records the current coordinates / altitude / accuracy. It is listed in `.gitignore`, so it won't be committed to the repo by accident.
+The data file `loc.json` is written next to `server.js` and records the current coordinates / altitude / accuracy. Favorites are stored in `favorites.json` in the same directory and are restored from the server after browser data is cleared. Both files are listed in `.gitignore`, so they won't be committed to the repo by accident.
 
 > ⚠️ **Don't put `TOKEN` in your shell history.** Prefer systemd's `Environment=` or `.env` + `direnv` to avoid leaking it via `history` / `ps aux`.
 

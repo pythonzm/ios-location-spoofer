@@ -41,6 +41,9 @@ const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, "loc.json");
 // 收藏保存在 VPS 文件中；浏览器 localStorage 只作为缓存和旧版本迁移来源。
 const FAVORITES_FILE = process.env.FAVORITES_FILE || path.join(path.dirname(DATA_FILE), "favorites.json");
 const FAVORITES_MAX = 12;
+const AMAP_KEY = process.env.AMAP_KEY || "";
+const AMAP_SEARCH_URL = process.env.AMAP_SEARCH_URL || "https://restapi.amap.com/v5/place/text";
+const NOMINATIM_SEARCH_URL = process.env.NOMINATIM_SEARCH_URL || "https://nominatim.openstreetmap.org/search";
 
 // 常量时间比较，避免通过响应时延逐字节爆破 token
 function safeEqual(a, b) {
@@ -119,6 +122,93 @@ function send(res, code, type, body) {
   res.end(body);
 }
 
+function fetchJson(target) {
+  return new Promise(function (resolve, reject) {
+    const client = target.protocol === "https:" ? https : http;
+    const request = client.get(target, { headers: { "User-Agent": "ios-location-picker/1.0" } }, function (response) {
+      let body = "";
+      response.setEncoding("utf8");
+      response.on("data", function (chunk) {
+        body += chunk;
+        if (body.length > 1e6) request.destroy(new Error("upstream response too large"));
+      });
+      response.on("end", function () {
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          return reject(new Error("upstream status " + response.statusCode));
+        }
+        try {
+          resolve(JSON.parse(body));
+        } catch (e) {
+          reject(new Error("bad upstream json"));
+        }
+      });
+    });
+    request.setTimeout(8000, function () { request.destroy(new Error("upstream timeout")); });
+    request.on("error", reject);
+  });
+}
+
+function amapAddress(poi) {
+  const parts = [poi.pname, poi.cityname, poi.adname, poi.address];
+  return parts.reduce(function (result, part) {
+    if (typeof part !== "string" || !part || result.indexOf(part) !== -1) return result;
+    return result + part;
+  }, "");
+}
+
+async function searchAmap(query, city) {
+  const target = new URL(AMAP_SEARCH_URL);
+  target.searchParams.set("key", AMAP_KEY);
+  target.searchParams.set("keywords", query);
+  target.searchParams.set("page_size", "10");
+  if (city) {
+    target.searchParams.set("city", city);
+    target.searchParams.set("city_limit", "true");
+  }
+  const data = await fetchJson(target);
+  if (!data || data.status !== "1" || !Array.isArray(data.pois)) {
+    throw new Error("Amap search failed");
+  }
+  return data.pois.map(function (poi) {
+    const pair = String(poi.location || "").split(",");
+    const lng = Number(pair[0]);
+    const lat = Number(pair[1]);
+    if (!isFinite(lat) || !isFinite(lng)) return null;
+    return {
+      name: String(poi.name || ""),
+      address: amapAddress(poi),
+      lat: lat,
+      lng: lng,
+      datum: "gcj",
+      source: "amap"
+    };
+  }).filter(Boolean);
+}
+
+async function searchNominatim(query, city) {
+  const target = new URL(NOMINATIM_SEARCH_URL);
+  target.searchParams.set("format", "json");
+  target.searchParams.set("addressdetails", "0");
+  target.searchParams.set("limit", "10");
+  target.searchParams.set("q", city ? city + " " + query : query);
+  const data = await fetchJson(target);
+  if (!Array.isArray(data)) throw new Error("Nominatim search failed");
+  return data.map(function (item) {
+    const lat = Number(item.lat);
+    const lng = Number(item.lon);
+    if (!isFinite(lat) || !isFinite(lng)) return null;
+    const label = String(item.display_name || "");
+    return {
+      name: label,
+      address: label,
+      lat: lat,
+      lng: lng,
+      datum: "wgs",
+      source: "osm"
+    };
+  }).filter(Boolean);
+}
+
 // 区分「没传 token」和「token 传错」：前者 401 引导补 ?token=，后者 403
 function checkToken(token, res) {
   if (token == null || token === "") {
@@ -140,6 +230,28 @@ function handler(req, res) {
   if (url.pathname === "/loc.json" && req.method === "GET") {
     if (!checkToken(token, res)) return;
     return send(res, 200, "application/json", JSON.stringify(readLoc()));
+  }
+
+  // ---- 地址搜索（服务端代理，避免向浏览器暴露高德 Key） ----
+  if (url.pathname === "/search" && req.method === "GET") {
+    if (!checkToken(token, res)) return;
+    const query = String(url.searchParams.get("q") || "").trim().slice(0, 100);
+    const city = String(url.searchParams.get("city") || "").trim().slice(0, 50);
+    if (!query) return send(res, 400, "application/json", '{"error":"missing query"}');
+    const searchPromise = AMAP_KEY
+      ? searchAmap(query, city)
+        .then(function (results) {
+          if (!results.length) throw new Error("Amap returned no places");
+          return results;
+        })
+        .catch(function () { return searchNominatim(query, city); })
+      : searchNominatim(query, city);
+    searchPromise.then(function (results) {
+      send(res, 200, "application/json", JSON.stringify(results));
+    }).catch(function () {
+      send(res, 502, "application/json", '{"error":"search upstream failed"}');
+    });
+    return;
   }
 
   // ---- 收藏地址（VPS 持久化，不依赖浏览器历史数据） ----
@@ -293,6 +405,7 @@ const PAGE = `<!doctype html>
   html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,sans-serif}
   .bar{padding:8px;display:flex;gap:6px;box-sizing:border-box}
   .bar input{flex:1;padding:10px;font-size:16px;border:1px solid #ccc;border-radius:8px}
+  .bar #city{flex:0 0 82px;min-width:0}
   .bar button{padding:10px 14px;font-size:16px;border:0;border-radius:8px;background:#007aff;color:#fff}
   .bar button:disabled{opacity:.55}
   .results{margin:0 8px;border:1px solid #e2e2e2;border-radius:8px;max-height:34vh;overflow:auto;display:none}
@@ -301,6 +414,8 @@ const PAGE = `<!doctype html>
   .rrow:last-child{border-bottom:0}
   .rrow:active{background:#f0f6ff}
   .rrow .fname{flex:1;min-width:0}
+  .rrow .rname{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rrow .raddr{margin-top:3px;color:#666;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .rrow .fdel{padding:6px 10px;font-size:13px;border:0;border-radius:6px;background:#ff3b30;color:#fff;flex-shrink:0}
   #map{height:52vh}
   #info{padding:8px 10px;font-size:13px;line-height:1.4}
@@ -318,6 +433,7 @@ const PAGE = `<!doctype html>
 </head>
 <body>
 <div class="bar">
+  <input id="city" placeholder="城市（可选）">
   <input id="q" placeholder="搜地名，回车列出候选（只预览，不改定位）">
   <button id="locatebtn" disabled>当前位置</button>
   <button id="btn">搜</button>
@@ -614,9 +730,14 @@ function locateCurrent(){
 }
 
 // 搜索：列出多个候选，点选只移动地图视野（不动定位点、不保存）
+function searchResultPos(it){
+  var lat=Number(it.lat),lng=wrapLng(it.lng);
+  if(it.datum==="gcj")return datum==="gcj"?[lat,lng]:GCJ.gcj2wgs(lat,lng);
+  return datum==="gcj"?GCJ.wgs2gcj(lat,lng):[lat,lng];
+}
 function search(){
   var q=$("q").value.trim(); if(!q) return;
-  fetch("https://nominatim.openstreetmap.org/search?format=json&addressdetails=0&limit=8&q="+encodeURIComponent(q))
+  fetch("/search?token="+encodeURIComponent(token)+"&q="+encodeURIComponent(q)+"&city="+encodeURIComponent($("city").value.trim()))
     .then(function(r){return r.json();})
     .then(function(a){
       var box=$("results"); box.innerHTML="";
@@ -624,11 +745,20 @@ function search(){
       a.forEach(function(it){
         var row=document.createElement("div");
         row.className="rrow";
-        row.textContent=it.display_name;
+        var text=document.createElement("div");
+        text.className="fname";
+        var name=document.createElement("div");
+        name.className="rname";
+        name.textContent=it.name;
+        var address=document.createElement("div");
+        address.className="raddr";
+        address.textContent=it.address;
+        text.appendChild(name);
+        text.appendChild(address);
+        row.appendChild(text);
         row.addEventListener("click",function(){
           box.classList.remove("show"); box.innerHTML="";
-          var la=+it.lat, lo=+it.lon;
-          var p = datum==="gcj"?GCJ.wgs2gcj(la,lo):[la,lo];
+          var p=searchResultPos(it);
           map.setView(p,15);            // 只移动视野；要设为定位，请在地图上点一下放图钉
           toast("已定位视野，在地图上点一下放置图钉");
         });

@@ -134,6 +134,7 @@ This project welcomes review and feedback from the LINUX DO community: [LINUX DO
 | `KEY` | No | empty | HTTPS private key path; used only when both `CERT` and `KEY` are set. |
 | `DATA_FILE` | No | `loc.json` next to `server.js` | Current-location data file path. |
 | `FAVORITES_FILE` | No | `favorites.json` next to `DATA_FILE` | Favorite-locations data file path. |
+| `AMAP_KEY` | No | empty | Amap “Web Service” key. When set, Amap POI search is preferred, with automatic OpenStreetMap fallback. |
 
 Startup examples:
 
@@ -148,6 +149,8 @@ KEY=/root/cert/example.com/privkey.pem \
 node server.js
 ```
 
+For Amap-quality POI results in China, create an application in the [Amap developer console](https://console.amap.com/dev/key/app), add a **Web Service** key, and set `AMAP_KEY` through systemd `Environment=` / `EnvironmentFile=` or `direnv`. Running `node server.js` directly **does not load `.env` automatically**; Docker Compose does load `.env` from this directory. Do not use a “Web (JS API)” key.
+
 The data file `loc.json` is written next to `server.js` and records the current coordinates / altitude / accuracy. Favorites are stored in `favorites.json` in the same directory and are restored from the server after browser data is cleared. Both files are listed in `.gitignore`, so they won't be committed to the repo by accident.
 
 > ⚠️ **Don't put `TOKEN` in your shell history.** Prefer systemd's `Environment=` or `.env` + `direnv` to avoid leaking it via `history` / `ps aux`.
@@ -157,6 +160,7 @@ The data file `loc.json` is written next to `server.js` and records the current 
 ```bash
 cd location-picker
 echo "TOKEN=$(openssl rand -hex 24)" > .env
+# Optional: echo "AMAP_KEY=your-amap-web-service-key" >> .env
 docker compose up -d
 ```
 

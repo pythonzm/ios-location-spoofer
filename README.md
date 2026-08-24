@@ -186,6 +186,7 @@ https://你的worker.workers.dev/loc.json?token=你的TOKEN
 | `KEY` | 否 | 空 | HTTPS 私钥路径；与 `CERT` 同时设置才走 https |
 | `DATA_FILE` | 否 | `server.js` 同目录的 `loc.json` | 当前定位数据文件路径 |
 | `FAVORITES_FILE` | 否 | 与 `DATA_FILE` 同目录的 `favorites.json` | 收藏地址数据文件路径 |
+| `AMAP_KEY` | 否 | 空 | 高德开放平台的“Web服务”Key；配置后优先使用高德 POI 搜索，失败时自动回退 OpenStreetMap |
 
 启动示例：
 
@@ -200,6 +201,8 @@ KEY=/root/cert/example.com/privkey.pem \
 node server.js
 ```
 
+要获得与高德地图更接近的国内地址搜索结果，请在[高德开放平台](https://console.amap.com/dev/key/app)创建应用并添加 **Web服务** Key，然后通过 systemd `Environment=` / `EnvironmentFile=` 或 `direnv` 设置 `AMAP_KEY`。直接运行 `node server.js` **不会自动读取 `.env`**；Docker Compose 才会自动读取本目录的 `.env`。不要使用“Web端(JS API)”Key。
+
 数据文件 `loc.json` 自动落在 `server.js` 同目录，记录当前坐标 / 海拔 / 精度；收藏地址保存在同目录的 `favorites.json`，清除浏览器数据后会自动从服务端恢复。两个文件均已在 `.gitignore` 中忽略，不会被误提交进仓库。
 
 > ⚠️ **不要把 `TOKEN` 写在命令行历史里**——推荐用 systemd 的 `Environment=` 或 `.env` + `direnv`。
@@ -209,6 +212,7 @@ node server.js
 ```bash
 cd location-picker
 echo "TOKEN=$(openssl rand -hex 24)" > .env
+# 可选：echo "AMAP_KEY=你的高德Web服务Key" >> .env
 docker compose up -d
 ```
 

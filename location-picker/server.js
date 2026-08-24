@@ -398,59 +398,385 @@ const PAGE = `<!doctype html>
 <html lang="zh">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>定位选点</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
-  html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,sans-serif}
-  .bar{padding:8px;display:flex;gap:6px;box-sizing:border-box}
-  .bar input{flex:1;padding:10px;font-size:16px;border:1px solid #ccc;border-radius:8px}
-  .bar #city{flex:0 0 82px;min-width:0}
-  .bar button{padding:10px 14px;font-size:16px;border:0;border-radius:8px;background:#007aff;color:#fff}
-  .bar button:disabled{opacity:.55}
-  .results{margin:0 8px;border:1px solid #e2e2e2;border-radius:8px;max-height:34vh;overflow:auto;display:none}
-  .results.show{display:block}
-  .rrow{padding:10px 12px;font-size:14px;border-bottom:1px solid #eee;color:#222;display:flex;align-items:center;gap:8px}
-  .rrow:last-child{border-bottom:0}
-  .rrow:active{background:#f0f6ff}
-  .rrow .fname{flex:1;min-width:0}
-  .rrow .rname{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .rrow .raddr{margin-top:3px;color:#666;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .rrow .fdel{padding:6px 10px;font-size:13px;border:0;border-radius:6px;background:#ff3b30;color:#fff;flex-shrink:0}
-  #map{height:52vh}
-  #info{padding:8px 10px;font-size:13px;line-height:1.4}
-  .opts{padding:6px 10px 12px;display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}
-  .opts label{font-size:13px;color:#444;display:flex;flex-direction:column}
-  .opts input{width:88px;padding:8px;font-size:15px;border:1px solid #ccc;border-radius:6px;margin-top:2px}
-  #savebtn{padding:11px 20px;font-size:16px;border:0;border-radius:8px;background:#34c759;color:#fff;font-weight:600}
-  #restorebtn{padding:11px 16px;font-size:15px;border:0;border-radius:8px;background:#8e8e93;color:#fff}
-  #favadd,#favlistbtn{padding:11px 14px;font-size:15px;border:0;border-radius:8px;background:#5856d6;color:#fff}
-  .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);
-    background:rgba(0,0,0,.85);color:#fff;padding:10px 16px;border-radius:8px;
-    font-size:14px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:9999}
-  .toast.show{opacity:1}
+  :root {
+    --primary: #007aff;
+    --primary-hover: #0062cc;
+    --success: #34c759;
+    --success-hover: #2db34f;
+    --warning: #ff9500;
+    --danger: #ff3b30;
+    --danger-hover: #d72f25;
+    --purple: #5856d6;
+    --purple-hover: #4745b8;
+    --bg-page: #f2f2f7;
+    --bg-card: #ffffff;
+    --border-color: #e5e5ea;
+    --border-focus: #007aff;
+    --text-main: #1c1c1e;
+    --text-muted: #8e8e93;
+    --shadow-subtle: 0 2px 8px rgba(0,0,0,0.06);
+    --shadow-dropdown: 0 10px 28px rgba(0,0,0,0.12);
+    --radius-md: 10px;
+    --radius-sm: 8px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: var(--bg-page);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "PingFang SC", sans-serif;
+    color: var(--text-main);
+  }
+  .app-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+    max-width: 960px;
+    margin: 0 auto;
+    background: var(--bg-card);
+    position: relative;
+    box-shadow: 0 0 30px rgba(0,0,0,0.05);
+  }
+
+  /* 顶部搜索栏 */
+  .bar {
+    padding: 10px 12px;
+    display: flex;
+    gap: 8px;
+    background: #ffffff;
+    border-bottom: 1px solid var(--border-color);
+    position: relative;
+    z-index: 1000;
+    align-items: center;
+  }
+  .bar input {
+    padding: 9px 12px;
+    font-size: 14px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: #fbfbfd;
+    color: var(--text-main);
+    outline: none;
+    transition: all 0.2s ease;
+  }
+  .bar input:focus {
+    background: #ffffff;
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15);
+  }
+  .bar #city {
+    flex: 0 0 86px;
+    min-width: 0;
+    text-align: center;
+  }
+  .bar #q {
+    flex: 1;
+    min-width: 0;
+  }
+  .bar button {
+    padding: 9px 14px;
+    font-size: 14px;
+    font-weight: 500;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: var(--primary);
+    color: #fff;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .bar button:hover:not(:disabled) {
+    background: var(--primary-hover);
+  }
+  .bar button:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+  .bar button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .bar #locatebtn {
+    background: #e5e5ea;
+    color: #1c1c1e;
+  }
+  .bar #locatebtn:hover:not(:disabled) {
+    background: #d1d1d6;
+  }
+
+  /* 搜索结果 & 收藏列表 */
+  .results {
+    margin: 6px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    max-height: 38vh;
+    overflow-y: auto;
+    display: none;
+    background: #ffffff;
+    box-shadow: var(--shadow-dropdown);
+    position: absolute;
+    top: 56px;
+    left: 0;
+    right: 0;
+    z-index: 1001;
+    animation: slideDown 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .results.show {
+    display: block;
+  }
+  #favs {
+    top: auto;
+    bottom: 110px;
+  }
+  @keyframes slideDown {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .rrow {
+    padding: 10px 14px;
+    font-size: 14px;
+    border-bottom: 1px solid #f2f2f7;
+    color: var(--text-main);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .rrow:last-child {
+    border-bottom: 0;
+  }
+  .rrow:hover {
+    background: #f5f8ff;
+  }
+  .rrow:active {
+    background: #eaf1fb;
+  }
+  .rrow .fname {
+    flex: 1;
+    min-width: 0;
+  }
+  .rrow .rname {
+    font-weight: 600;
+    font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #1c1c1e;
+  }
+  .rrow .raddr {
+    margin-top: 3px;
+    color: var(--text-muted);
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .rrow .fdel {
+    padding: 5px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 0;
+    border-radius: 6px;
+    background: var(--danger);
+    color: #fff;
+    flex-shrink: 0;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .rrow .fdel:hover {
+    background: var(--danger-hover);
+  }
+  .rrow .fdel:active {
+    transform: scale(0.94);
+  }
+
+  /* 地图主体 */
+  #map {
+    flex: 1;
+    min-height: 40vh;
+    width: 100%;
+    z-index: 1;
+  }
+  .leaflet-control-layers {
+    border: none !important;
+    border-radius: var(--radius-sm) !important;
+    box-shadow: var(--shadow-subtle) !important;
+    padding: 6px 10px !important;
+    font-size: 13px !important;
+  }
+  .leaflet-bar {
+    border: none !important;
+    border-radius: var(--radius-sm) !important;
+    box-shadow: var(--shadow-subtle) !important;
+    overflow: hidden;
+  }
+  .leaflet-bar a {
+    color: var(--text-main) !important;
+    border-bottom: 1px solid #f2f2f7 !important;
+  }
+
+  /* 信息状态栏 */
+  #info {
+    padding: 9px 14px;
+    font-size: 13px;
+    line-height: 1.4;
+    background: #fbfbfd;
+    border-top: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
+    color: #3a3a3c;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  /* 底部微调和操作栏 */
+  .opts {
+    padding: 10px 14px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: flex-end;
+    background: #ffffff;
+  }
+  .opts label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .opts input {
+    width: 82px;
+    padding: 7px 9px;
+    font-size: 14px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: #fbfbfd;
+    color: var(--text-main);
+    outline: none;
+    transition: all 0.2s ease;
+  }
+  .opts input:focus {
+    background: #ffffff;
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15);
+  }
+  .opts button {
+    padding: 9px 14px;
+    font-size: 14px;
+    font-weight: 600;
+    border: 0;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+  }
+  .opts button:active {
+    transform: scale(0.97);
+  }
+  #savebtn {
+    padding: 9px 18px;
+    font-size: 15px;
+    background: var(--success);
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(52, 199, 89, 0.28);
+  }
+  #savebtn:hover {
+    background: var(--success-hover);
+  }
+  #restorebtn {
+    background: #8e8e93;
+    color: #fff;
+  }
+  #restorebtn:hover {
+    opacity: 0.9;
+  }
+  #favadd, #favlistbtn {
+    background: var(--purple);
+    color: #fff;
+  }
+  #favadd:hover, #favlistbtn:hover {
+    background: var(--purple-hover);
+  }
+
+  /* 提示条 Toast */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: rgba(28, 28, 30, 0.92);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    color: #ffffff;
+    padding: 10px 20px;
+    border-radius: 24px;
+    font-size: 14px;
+    font-weight: 500;
+    box-shadow: var(--shadow-dropdown);
+    opacity: 0;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    pointer-events: none;
+    z-index: 9999;
+    text-align: center;
+    max-width: 85vw;
+  }
+  .toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  @media (max-width: 600px) {
+    .bar { padding: 8px 10px; gap: 6px; }
+    .bar #city { flex: 0 0 72px; font-size: 13px; padding: 8px 6px; }
+    .bar #q { font-size: 13px; padding: 8px 10px; }
+    .bar button { font-size: 13px; padding: 8px 10px; }
+    .opts { padding: 8px 10px; gap: 6px; }
+    .opts label { font-size: 11px; }
+    .opts input { width: 70px; padding: 6px 6px; font-size: 13px; }
+    .opts button { font-size: 13px; padding: 8px 10px; }
+    #savebtn { font-size: 14px; padding: 8px 14px; }
+    #info { padding: 8px 10px; font-size: 12px; }
+  }
 </style>
 </head>
 <body>
-<div class="bar">
-  <input id="city" placeholder="城市（可选）">
-  <input id="q" placeholder="搜地名，回车列出候选（只预览，不改定位）">
-  <button id="locatebtn" disabled>当前位置</button>
-  <button id="btn">搜</button>
+<div class="app-container">
+  <div class="bar">
+    <input id="city" placeholder="城市（可选）">
+    <input id="q" placeholder="搜地名，回车列出候选（只预览，不改定位）">
+    <button id="locatebtn" disabled>当前位置</button>
+    <button id="btn">搜</button>
+  </div>
+  <div class="results" id="results"></div>
+  <div class="results" id="favs"></div>
+  <div id="map"></div>
+  <div id="info">加载中…</div>
+  <div class="opts">
+    <label>海拔(米)<input id="alt" type="number" inputmode="numeric"></label>
+    <label>水平精度<input id="hacc" type="number" inputmode="numeric"></label>
+    <label>垂直精度<input id="vacc" type="number" inputmode="numeric"></label>
+    <button id="savebtn">保存定位</button>
+    <button id="restorebtn">恢复真实定位</button>
+    <button id="favadd">收藏此点</button>
+    <button id="favlistbtn">我的收藏</button>
+  </div>
 </div>
-<div class="results" id="results"></div>
-<div id="map"></div>
-<div id="info">加载中…</div>
-<div class="opts">
-  <label>海拔(米)<input id="alt" type="number" inputmode="numeric"></label>
-  <label>水平精度<input id="hacc" type="number" inputmode="numeric"></label>
-  <label>垂直精度<input id="vacc" type="number" inputmode="numeric"></label>
-  <button id="savebtn">保存定位</button>
-  <button id="restorebtn">恢复真实定位</button>
-  <button id="favadd">收藏此点</button>
-  <button id="favlistbtn">我的收藏</button>
-</div>
-<div class="results" id="favs"></div>
 <div class="toast" id="toast"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>

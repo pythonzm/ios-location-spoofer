@@ -10,12 +10,18 @@ const serverPath = fileURLToPath(new URL("../../server.js", import.meta.url));
 test("Node server page searches through its authenticated proxy and handles result datums", async () => {
   const source = await readFile(serverPath, "utf8");
   assert.match(source, /id="city"[^>]*placeholder="城市（可选）"/);
+  assert.match(source, /id="q"[^>]*placeholder="搜地名，选择后移动图钉，确认后保存"/);
   assert.match(source, /fetch\("\/search\?token="\+encodeURIComponent\(token\)/);
   assert.match(source, /city="\+encodeURIComponent\(\$\("city"\)\.value\.trim\(\)\)/);
   assert.match(source, /function searchResultPos\(it\)/);
   assert.match(source, /it\.datum==="gcj"\)return datum==="gcj"\?\[lat,lng\]:GCJ\.gcj2wgs/);
   assert.match(source, /name\.textContent=it\.name/);
   assert.match(source, /address\.textContent=it\.address/);
+  assert.match(
+    source,
+    /function selectSearchResult\(it\)\{[\s\S]*?movePin\(p\[0\],p\[1\]\);[\s\S]*?map\.setView\(p,15\);[\s\S]*?确认后保存[\s\S]*?\}/,
+  );
+  assert.doesNotMatch(source, /function selectSearchResult\(it\)\{[\s\S]*?commit\(\);[\s\S]*?\}/);
 });
 
 async function waitForServer(url) {

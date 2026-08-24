@@ -759,7 +759,7 @@ const PAGE = `<!doctype html>
 <div class="app-container">
   <div class="bar">
     <input id="city" placeholder="城市（可选）">
-    <input id="q" placeholder="搜地名，回车列出候选（只预览，不改定位）">
+  <input id="q" placeholder="搜地名，选择后移动图钉，确认后保存">
     <button id="locatebtn" disabled>当前位置</button>
     <button id="btn">搜</button>
   </div>
@@ -1055,11 +1055,17 @@ function locateCurrent(){
   );
 }
 
-// 搜索：列出多个候选，点选只移动地图视野（不动定位点、不保存）
+// 搜索：列出多个候选；点选后移动图钉并更新待保存位置，但不自动写入定位。
 function searchResultPos(it){
   var lat=Number(it.lat),lng=wrapLng(it.lng);
   if(it.datum==="gcj")return datum==="gcj"?[lat,lng]:GCJ.gcj2wgs(lat,lng);
   return datum==="gcj"?GCJ.wgs2gcj(lat,lng):[lat,lng];
+}
+function selectSearchResult(it){
+  var p=searchResultPos(it);
+  movePin(p[0],p[1]);
+  map.setView(p,15);
+  toast("已选择位置，确认后保存");
 }
 function search(){
   var q=$("q").value.trim(); if(!q) return;
@@ -1084,9 +1090,7 @@ function search(){
         row.appendChild(text);
         row.addEventListener("click",function(){
           box.classList.remove("show"); box.innerHTML="";
-          var p=searchResultPos(it);
-          map.setView(p,15);            // 只移动视野；要设为定位，请在地图上点一下放图钉
-          toast("已定位视野，在地图上点一下放置图钉");
+          selectSearchResult(it);
         });
         box.appendChild(row);
       });
